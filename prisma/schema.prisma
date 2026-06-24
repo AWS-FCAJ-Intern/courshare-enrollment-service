@@ -1,0 +1,18 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Enrollment {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  courseId   String   @map("course_id")
+  enrolledAt DateTime @default(now()) @map("enrolled_at")
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
