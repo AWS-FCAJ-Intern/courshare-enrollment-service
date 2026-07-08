@@ -1,10 +1,22 @@
-FROM eclipse-temurin:21-jdk-alpine AS build
+# Stage 1: Build
+FROM node:20-alpine AS builder
 WORKDIR /app
-COPY pom.xml .
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm ci
+COPY tsconfig.json ./
 COPY src ./src
-RUN apk add --no-cache maven && mvn -q package -DskipTests
-FROM eclipse-temurin:21-jre-alpine
+RUN npx prisma generate
+RUN npm run build
+
+# Stage 2: Run
+FROM node:20-alpine
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+COPY package*.json ./
+RUN npm ci --only=production
+COPY prisma ./prisma/
+RUN npx prisma generate
+COPY --from=builder /app/dist ./dist
 EXPOSE 8084
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENV PORT=8084
+CMD ["npm", "run", "start"]
