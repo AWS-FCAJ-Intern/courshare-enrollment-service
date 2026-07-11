@@ -18,11 +18,13 @@ export class EnrollmentRepository {
   }
   async removeEnrollment(userId: string, courseId: string) {
     try {
-      return await prisma.enrollment.deleteMany({
-        where: {
-          userId: userId,
-          courseId: courseId,
-        },
+      return await prisma.enrollment.delete({
+        where:{
+          userId_courseId: {
+            userId: userId,
+            courseId: courseId,
+          }
+        }
       });
     } catch (error) {
       console.error("Error removing enrollment:", error);

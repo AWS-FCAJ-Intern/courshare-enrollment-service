@@ -1,3 +1,5 @@
+import { EnrollmentEventType } from "../events/enrollment.event";
+import { sqsPublisher } from "../messaging/sqs.publisher";
 import { enrollmentRepository } from "../repositories/enrollment.repository";
 
 export async function RegisterCourseService(userID: string, courseId: string) {
@@ -8,7 +10,15 @@ export async function RegisterCourseService(userID: string, courseId: string) {
     }
     const enrollment = await enrollmentRepository.createEnrollment({ userId: userID, courseId });
     // Publish an event to the message broker to notify other services about the new enrollment
-
+    await sqsPublisher.EnrollmentPublisher({
+      eventType: EnrollmentEventType.COURSE_CREATED,
+      payload: {
+        enrollmentId: enrollment.id,
+        userId: enrollment.userId,
+        courseId: enrollment.courseId,
+      },
+      occurredAt: new Date().toISOString(),
+    });
     return enrollment;
   } catch (error) {
     console.error("Error creating enrollment:", error);
@@ -22,7 +32,18 @@ export async function RemoveEnrollmentService(userId: string, courseId: string) 
     if (!isEnrolled) {
       throw new Error("User is not enrolled in this course");
     }
-    return await enrollmentRepository.removeEnrollment(userId, courseId);
+    const enrollmentRemoved = await enrollmentRepository.removeEnrollment(userId, courseId);
+    // Publish an event to the message broker to notify other services about the removed enrollment
+    await sqsPublisher.EnrollmentPublisher({
+      eventType: EnrollmentEventType.COURSE_REMOVED,
+      payload: {
+        enrollmentId: enrollmentRemoved.id,
+        userId: enrollmentRemoved.userId,
+        courseId: enrollmentRemoved.courseId,
+      },
+      occurredAt: new Date().toISOString(),
+    });
+    return enrollmentRemoved;
   } catch (error) {
     console.error("Error removing enrollment:", error);
     throw error;
