@@ -1,15 +1,56 @@
 import { EnrollmentEventType } from "../events/enrollment.event";
 import { sqsPublisher } from "../messaging/sqs.publisher";
 import { enrollmentRepository } from "../repositories/enrollment.repository";
+import { PermanentError, TransientError, TRANSIENT_DB_ERROR_CODES } from "../errors/app-errors";
 
-export async function RegisterCourseService(userID: string, courseId: string) {
+
+function wrapInfraError(error: any, context: string): Error {
+  // Nếu đã là lỗi đã phân loại (throw chủ động ở service) thì giữ nguyên
+  if (error instanceof PermanentError || error instanceof TransientError) {
+    return error;
+  }
+  // Lỗi hạ tầng biết trước (DB/network) → Transient
+  if (error?.code && TRANSIENT_DB_ERROR_CODES.has(error.code)) {
+    return new TransientError(`${context}: ${error.message}`, error);
+  }
+  // Postgres unique_violation → xử lý riêng ở nơi gọi, không nên rơi vào đây
+  // Lỗi không xác định → an toàn hơn là coi như Transient, để retry thay vì mất message
+  return new TransientError(`Unexpected error in ${context}`, error);
+}
+
+export async function RegisterCourseService(userId: string, courseId: string) {
+  if (!userId) {
+    throw new PermanentError(`Invalid payload: userId=${userId}`);
+  }
+  if (!courseId) {
+    throw new PermanentError(`Invalid payload: courseId=${courseId}`);
+  }
+
+  let isAlreadyEnrolled: boolean;
   try {
-    const isAlreadyEnrolled = await enrollmentRepository.exists(userID, courseId);
-    if (isAlreadyEnrolled!=null) {
-      throw new Error("User is already enrolled in this course");
+    isAlreadyEnrolled = await enrollmentRepository.exists(userId, courseId);
+  } catch (error) {
+    throw wrapInfraError(error, "Failed to check existing enrollment");
+  }
+
+  if (isAlreadyEnrolled) {
+    console.warn(`User ${userId} already enrolled in course ${courseId}, skipping`);
+    return await enrollmentRepository.getEnrollmentsByUserId(userId);
+  }
+
+  let enrollment;
+  try {
+    enrollment = await enrollmentRepository.createEnrollment({ userId, courseId });
+  } catch (error: any) {
+    // Race condition: 2 message xử lý gần như đồng thời cùng insert
+    if (error.code === "23505") { // unique_violation (Postgres)
+      console.warn("Enrollment already exists (race condition), treating as success");
+      return await enrollmentRepository.getEnrollmentsByUserId(userId);
     }
-    const enrollment = await enrollmentRepository.createEnrollment({ userId: userID, courseId });
-    // Publish an event to the message broker to notify other services about the new enrollment
+    throw wrapInfraError(error, "Failed to create enrollment");
+  }
+
+  try {
     await sqsPublisher.EnrollmentPublisher({
       eventType: EnrollmentEventType.COURSE_CREATED,
       payload: {
@@ -19,21 +60,44 @@ export async function RegisterCourseService(userID: string, courseId: string) {
       },
       occurredAt: new Date().toISOString(),
     });
-    return enrollment;
   } catch (error) {
-    console.error("Error creating enrollment:", error);
-    throw error;
+    // Enrollment đã tạo thành công nhưng publish thất bại → lỗi tạm thời,
+    // nên để consumer retry toàn bộ message (idempotent nhờ check exists() ở trên)
+    throw wrapInfraError(error, "Failed to publish enrollment created event");
   }
+
+  return enrollment;
 }
 
 export async function RemoveEnrollmentService(userId: string, courseId: string) {
+  if (!userId) {
+    throw new PermanentError(`Invalid payload: userId=${userId}`);
+  }
+  if (!courseId) {
+    throw new PermanentError(`Invalid payload: courseId=${courseId}`);
+  }
+
+  let isEnrolled: boolean;
   try {
-    const isEnrolled = await enrollmentRepository.exists(userId, courseId);
-    if (!isEnrolled) {
-      throw new Error("User is not enrolled in this course");
-    }
-    const enrollmentRemoved = await enrollmentRepository.removeEnrollment(userId, courseId);
-    // Publish an event to the message broker to notify other services about the removed enrollment
+    isEnrolled = await enrollmentRepository.exists(userId, courseId);
+  } catch (error) {
+    throw wrapInfraError(error, "Failed to check enrollment before removal");
+  }
+
+  if (!isEnrolled) {
+    // Đã bị xoá trước đó (event trùng) → coi như đã xử lý xong, không phải lỗi
+    console.warn(`Enrollment not found for user ${userId}, course ${courseId} — already removed?`);
+    return null;
+  }
+
+  let enrollmentRemoved;
+  try {
+    enrollmentRemoved = await enrollmentRepository.removeEnrollment(userId, courseId);
+  } catch (error) {
+    throw wrapInfraError(error, "Failed to remove enrollment");
+  }
+
+  try {
     await sqsPublisher.EnrollmentPublisher({
       eventType: EnrollmentEventType.COURSE_REMOVED,
       payload: {
@@ -43,34 +107,38 @@ export async function RemoveEnrollmentService(userId: string, courseId: string) 
       },
       occurredAt: new Date().toISOString(),
     });
-    return enrollmentRemoved;
   } catch (error) {
-    console.error("Error removing enrollment:", error);
-    throw error;
+    throw wrapInfraError(error, "Failed to publish enrollment removed event");
   }
+
+  return enrollmentRemoved;
 }
 
 export async function GetAllEnrollmentsService(userId: string) {
+  if (!userId) {
+    throw new PermanentError(`Invalid payload: userId=${userId}`);
+  }
+
   try {
-    return await enrollmentRepository.getEnrollmentsByUserId(userId);
+    const enrollments = await enrollmentRepository.getEnrollmentsByUserId(userId);
+    return enrollments ?? [];
   } catch (error) {
-    console.error("Error fetching enrollments:", error);
-    throw error;
+    throw wrapInfraError(error, "Failed to fetch enrollments");
   }
 }
 
-export async function verifyEnrollmentService(
-  userId: string,
-  courseId: string
-) {
-  try {
-    const enrollment = await enrollmentRepository.exists(userId, courseId);
+export async function verifyEnrollmentService(userId: string, courseId: string) {
+  if (!userId) {
+    throw new PermanentError(`Invalid payload: userId=${userId}`);
+  }
+  if (!courseId) {
+    throw new PermanentError(`Invalid payload: courseId=${courseId}`);
+  }
 
-    return {
-      enrolled: enrollment !== null,
-    };
+  try {
+    const enrolled = await enrollmentRepository.exists(userId, courseId);
+    return { enrolled };
   } catch (error) {
-    console.error("Error verifying enrollment:", error);
-    throw error;
+    throw wrapInfraError(error, "Failed to verify enrollment");
   }
 }

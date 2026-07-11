@@ -44,12 +44,13 @@ export class EnrollmentRepository {
     }
   }
   async exists(userId: string, courseId: string) {
-    return prisma.enrollment.findFirst({
+    const enrollment = await prisma.enrollment.findFirst({
       where: {
         userId,
         courseId,
       },
     });
+    return enrollment!==null;
   }
 }
 export const enrollmentRepository = new EnrollmentRepository();

@@ -9,9 +9,15 @@ import { Message } from "@aws-sdk/client-sqs";
 import { RegisterCourseService, RemoveEnrollmentService } from '../services/enrollment.service';
 import { PaymentEvent, PaymentEventType } from "../events/payment.event";
 
-class PaymentConsumer {
-  private readonly queueUrl = process.env.PAYMENT_SQS_QUEUE_URL!;
+import { PermanentError, TransientError } from "../errors/app-errors";
 
+
+class PaymentConsumer {
+  private readonly queueUrl = (() => {
+    const url = process.env.PAYMENT_SQS_QUEUE_URL;
+    if (!url) throw new Error('PAYMENT_SQS_QUEUE_URL is not defined');
+    return url;
+  })();
   async start() {
     while (true) {
       try {
@@ -35,6 +41,10 @@ class PaymentConsumer {
     if (!response.Messages?.length) {
       return;
     }
+    // We can use Promise.all here to process messages concurrently
+    // await Promise.allSettled(
+    //   response.Messages.map(message => this.handleMessage(message))
+    // );
     for (const message of response.Messages) {
       try {
         await this.handleMessage(message);
@@ -68,7 +78,15 @@ class PaymentConsumer {
           await RegisterCourseService(payload.userId, payload.courseId);
           await this.deleteMessage(message.ReceiptHandle!);
         } catch (error) {
-          console.error("Error registering course:", error);
+          if (error instanceof TransientError) {
+            console.error('Transient error, will retry:', error.message, error.cause);
+          }
+          if (error instanceof PermanentError) {
+            console.error('Permanent error, will not retry:', error.message, error.cause);
+            await this.deleteMessage(message.ReceiptHandle!);
+          } else {
+            console.error("Error registering course:", error);
+          }
         }
         break;
       case PaymentEventType.COURSE_REFUNDED:
@@ -77,12 +95,20 @@ class PaymentConsumer {
           await RemoveEnrollmentService(payload.userId, payload.courseId);
           await this.deleteMessage(message.ReceiptHandle!);
         } catch (error) {
+          if (error instanceof TransientError) {
+            console.error('Transient error, will retry:', error.message, error.cause);
+          }
+          if (error instanceof PermanentError) {
+            console.error('Permanent error, will not retry:', error.message, error.cause);
+            await this.deleteMessage(message.ReceiptHandle!);
+          }
           console.error("Error removing enrollment:", error);
         }
         break;
       default:
         console.warn(`Unhandled event type: ${eventType}`);
-        await this.deleteMessage(message.ReceiptHandle!);
+        // Maybe delete the message to avoid reprocessing, or keep it for later analysis
+        // await this.deleteMessage(message.ReceiptHandle!);
         break;
     }
   }
