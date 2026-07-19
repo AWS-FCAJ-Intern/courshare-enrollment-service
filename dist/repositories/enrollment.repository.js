@@ -19,11 +19,13 @@ class EnrollmentRepository {
     }
     async removeEnrollment(userId, courseId) {
         try {
-            return await prisma_1.prisma.enrollment.deleteMany({
+            return await prisma_1.prisma.enrollment.delete({
                 where: {
-                    userId: userId,
-                    courseId: courseId,
-                },
+                    userId_courseId: {
+                        userId: userId,
+                        courseId: courseId,
+                    }
+                }
             });
         }
         catch (error) {
@@ -45,12 +47,13 @@ class EnrollmentRepository {
         }
     }
     async exists(userId, courseId) {
-        return prisma_1.prisma.enrollment.findFirst({
+        const enrollment = await prisma_1.prisma.enrollment.findFirst({
             where: {
                 userId,
                 courseId,
             },
         });
+        return enrollment !== null;
     }
 }
 exports.EnrollmentRepository = EnrollmentRepository;

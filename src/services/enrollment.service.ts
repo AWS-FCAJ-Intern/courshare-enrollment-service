@@ -15,7 +15,7 @@ function wrapInfraError(error: any, context: string): Error {
   }
   // Postgres unique_violation → xử lý riêng ở nơi gọi, không nên rơi vào đây
   // Lỗi không xác định → an toàn hơn là coi như Transient, để retry thay vì mất message
-  return new TransientError(`Unexpected error in ${context}`, error);
+  return new TransientError(`${context}`, error);
 }
 
 export async function RegisterCourseService(userId: string, courseId: string) {
@@ -44,7 +44,7 @@ export async function RegisterCourseService(userId: string, courseId: string) {
   } catch (error: any) {
     // Race condition: 2 message xử lý gần như đồng thời cùng insert
     if (error.code === "23505") { // unique_violation (Postgres)
-      console.warn("Enrollment already exists (race condition), treating as success");
+      console.warn("Enrollment already exists, treating as success");
       return await enrollmentRepository.getEnrollmentsByUserId(userId);
     }
     throw wrapInfraError(error, "Failed to create enrollment");
