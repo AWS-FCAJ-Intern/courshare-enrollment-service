@@ -5,11 +5,13 @@ exports.AllRegisteredCourses = AllRegisteredCourses;
 exports.checkEnrollment = checkEnrollment;
 const enrollment_service_1 = require("../services/enrollment.service");
 async function RegisterCourse(req, res) {
-    const { userId, courseId } = req.body;
-    if (!userId || typeof userId !== "string") {
+    // Change to JWT authentication in the future to get userId from the token instead of headers
+    const userId = req.headers["x-user-id"];
+    const { courseId } = req.body;
+    if (!userId) {
         return res.status(400).json({ message: "User ID is required" });
     }
-    if(!courseId) {
+    if (!courseId) {
         return res.status(400).json({ message: "Course ID is required" });
     }
     try {
@@ -27,6 +29,7 @@ async function RegisterCourse(req, res) {
     }
 }
 async function AllRegisteredCourses(req, res) {
+    // Change to JWT authentication in the future to get userId from the token instead of headers
     const userId = req.headers["x-user-id"];
     if (!userId || typeof userId !== "string") {
         return res.status(400).json({ message: "User ID is required in the headers" });
@@ -48,6 +51,7 @@ async function AllRegisteredCourses(req, res) {
     }
 }
 async function checkEnrollment(req, res) {
+    // Change to JWT authentication in the future to get userId from the token instead of headers
     const userId = req.headers["x-user-id"];
     const { courseId } = req.params;
     if (!userId || typeof userId !== "string") {
