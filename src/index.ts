@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import swaggerUi from 'swagger-ui-express';
-import { swaggerDocument } from './swagger';
+import { swaggerDocument } from './config/swagger';
 import healthRoutes from "./routes/health.routes";
 import enrollmentRoutes from "./routes/enrollment.routes";
 
