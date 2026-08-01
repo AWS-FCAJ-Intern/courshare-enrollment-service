@@ -17,6 +17,10 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci --only=production
+COPY prisma ./prisma/
+RUN npx prisma generate
+COPY --from=builder /app/dist ./dist
+COPY certs/ /app/certs/
 
 # Copy generated Prisma Client from build stage
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
