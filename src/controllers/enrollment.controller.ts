@@ -4,6 +4,8 @@ export async function RegisterCourse(req: Request, res: Response) {
   // Change to JWT authentication in the future to get userId from the token instead of headers
   const userId = req.headers["x-user-id"] as string;
   const {courseId } = req.body;
+  console.log("Register Course - User ID:", userId);
+  console.log("Register Course - Course ID:", courseId);
   if (!userId) {
     return res.status(400).json({ message: "User ID is required" });
   }
@@ -27,6 +29,7 @@ export async function RegisterCourse(req: Request, res: Response) {
 export async function AllRegisteredCourses(req: Request, res: Response) {
   // Change to JWT authentication in the future to get userId from the token instead of headers
   const userId = req.headers["x-user-id"];
+  console.log("All Registered Courses - User ID:", userId);
   if (!userId || typeof userId !== "string") {
     return res.status(400).json({ message: "User ID is required in the headers" });
   }
@@ -50,6 +53,8 @@ export async function checkEnrollment(req: Request, res: Response) {
   // Change to JWT authentication in the future to get userId from the token instead of headers
   const userId = req.headers["x-user-id"];
   const { courseId } = req.params;
+  console.log("Check Enrollment - User ID:", userId);
+  console.log("Check Enrollment - Course ID:", courseId);
   if (!userId || typeof userId !== "string") {
     return res.status(400).json({ message: "User ID is required in the headers" });
   }
