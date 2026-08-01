@@ -17,6 +17,7 @@ RUN npm ci --only=production
 COPY prisma ./prisma/
 RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
+COPY certs/ /app/certs/
 EXPOSE 8084
 ENV PORT=8084
 CMD ["npm", "run", "start"]
