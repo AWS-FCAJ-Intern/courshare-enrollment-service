@@ -5,7 +5,8 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerDocument } from './config/swagger';
 import healthRoutes from "./routes/health.routes";
 import enrollmentRoutes from "./routes/enrollment.routes";
-
+import {paymentConsumer} from "./messaging/sqs.consumer";
+ 
 dotenv.config();
 
 const app = express();
@@ -20,6 +21,9 @@ app.use('/enrollments', enrollmentRoutes);
 
 app.listen(port, () => {
   console.log(`[server]: Server is running at http://localhost:${port}`);
+  paymentConsumer.start().catch((err) => {
+    console.error("Error starting payment consumer:", err);
+  });
 });
 
 // Grace full shutdown
